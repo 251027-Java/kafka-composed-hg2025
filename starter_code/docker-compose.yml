@@ -1,10 +1,13 @@
 version: '3.8'
 
 services:
-  # Zookeeper - Required for Kafka coordination
+  # Zookeeper - for Kafka coordination
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: zookeeper
+    # Attach to network so Producer/Consumer can find it
+    networks:
+      - kafka-network
     ports:
       - "2181:2181"
     environment:
@@ -20,48 +23,69 @@ services:
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     container_name: kafka
+    # Attach to network so Producer/Consumer can find it
+    networks:
+      - kafka-network
     depends_on:
       zookeeper:
         condition: service_healthy
     ports:
       - "9092:9092"
     environment:
-      # TODO: Add the following Kafka environment variables
-      # KAFKA_BROKER_ID: 1
-      # KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      # KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      # KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      # KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      # KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      # TODO: Add the following Kafka environment variables 
       KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # 29092 is for internal Docker traffic; 9092 is for local machine
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+    # Volume mappings 
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
     healthcheck:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
       interval: 10s
       timeout: 10s
       retries: 5
 
-  # TODO: Add producer service
-  # producer:
-  #   build: ./producer
-  #   ports:
-  #     - "8080:8080"
-  #   environment:
-  #     SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-  #   depends_on:
-  #     kafka:
-  #       condition: service_healthy
+  # TODO: Add producer service 
+  producer:
+    build: ./producer # Build from Dockerfile
+    container_name: producer
+    networks:
+      - kafka-network # Connect to Kafka network
+    ports:
+      - "8080:8080"
+    environment:
+      # Set env variables for Kafka bootstrap servers
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on:
+      kafka:
+        condition: service_healthy
 
   # TODO: Add consumer service
-  # consumer:
-  #   build: ./consumer
-  #   ports:
-  #     - "8081:8081"
-  #   environment:
-  #     SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-  #   depends_on:
-  #     kafka:
-  #       condition: service_healthy
+  consumer:
+    build: ./consumer # Build from Dockerfile
+    container_name: consumer
+    networks:
+      - kafka-network # Connect to Kafka network
+    ports:
+      - "8081:8081"
+    environment:
+      # Set env variables for Kafka bootstrap servers
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on:
+      kafka:
+        condition: service_healthy
 
+# Volume definitions 
+volumes:
+  kafka_data:
+
+# Defined network to allow communication between all services
 networks:
-  default:
-    name: kafka-network
+  kafka-network:
+    driver: bridge
